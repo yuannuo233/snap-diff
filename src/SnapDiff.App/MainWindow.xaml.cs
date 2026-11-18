@@ -4,30 +4,44 @@ using System.Security.Principal;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
-using Microsoft.Win32; // 注意：这里的 OpenFileDialog/SaveFileDialog/OpenFolderDialog 来自 WPF，不是注册表
+using Microsoft.Win32; // 注意：这里的 SaveFileDialog/OpenFolderDialog 来自 WPF，不是注册表
 using SnapDiff.Core;
 
 namespace SnapDiff.App;
 
 /// <summary>
-/// 主窗口：四步向导（拍快照 A → 去装软件 → 拍快照 B → 看对比结果）。
+/// 主窗口：左侧步骤导航 + 右侧内容卡片，四步向导（拍快照 A → 去装软件 → 拍快照 B → 看对比结果）。
 /// 所有的扫描/对比都跑在后台线程（Task.Run）里，
 /// 界面只通过 Progress&lt;T&gt; 接收进度通知——所以窗口不会卡死。
 /// </summary>
 public partial class MainWindow : Window
 {
-    /// <summary>每个分组节点最多显示多少个结果条目（太多会拖慢界面；配合搜索框缩小范围）。</summary>
+    /// <summary>结果树每个分组节点最多显示多少个结果条目（太多会拖慢界面；配合搜索框缩小范围）。</summary>
     private const int MaxItemsPerGroup = 300;
 
-    /// <summary>结果树里的等宽字体（路径用等宽更像专业工具）。</summary>
-    private static readonly FontFamily MonoFont = new("Consolas");
+    // ---------- 结果树的画笔（冻结的纯色画笔，代码里直接用） ----------
+    private static readonly Brush MonoRowBrush = Freeze(0x1F, 0x23, 0x28);   // 树叶子行文字（路径，等宽）
+    private static readonly Brush HeaderTextBrush = Freeze(0x6B, 0x72, 0x80); // 分组表头文字
+    private static readonly Brush HeaderBgBrush = Freeze(0xF8, 0xF9, 0xFB);  // 分组表头底色
+    private static readonly Brush NoteTextBrush = Freeze(0x9A, 0xA1, 0xA9);  // 提示行文字
 
-    private SnapshotOptions? _optionsA;    // 快照 A 的拍摄范围（快照 B 必须用同一份）
-    private string? _pathA;                // 快照 A 文件路径
-    private string? _pathB;                // 快照 B 文件路径
-    private DiffResult? _diff;             // 对比结果
-    private CancellationTokenSource? _cts; // 取消扫描用
-    private int _currentStep = 1;          // 当前向导步骤
+    private static Brush Freeze(byte r, byte g, byte b)
+    {
+        var brush = new SolidColorBrush(Color.FromRgb(r, g, b));
+        brush.Freeze();
+        return brush;
+    }
+
+    private SnapshotOptions? _optionsA;     // 快照 A 的拍摄范围（快照 B 必须用同一份）
+    private string? _pathA;                 // 快照 A 文件路径
+    private string? _pathB;                 // 快照 B 文件路径
+    private DiffResult? _diff;              // 对比结果
+    private CancellationTokenSource? _cts;  // 取消扫描用
+    private int _currentStep = 1;           // 当前向导步骤
+    private int _maxReachedStep = 1;        // 已经到达过的最远步骤（导航只允许往回点）
+    private readonly HashSet<int> _completedSteps = new(); // 已完成的步骤（导航项右侧打勾）
+    private bool _navSyncing;               // 代码设置导航选中态时抑制事件
+    private bool _langSyncing;              // 代码设置语言下拉时抑制事件
 
     public MainWindow()
     {
@@ -54,15 +68,21 @@ public partial class MainWindow : Window
     {
         Title = Loc.T("App.Title");
         TitleText.Text = Loc.T("App.Name");
-        MenuLanguage.Header = Loc.T("Menu.Language");
-        MenuLangZh.Header = Loc.T("Menu.LangZh");
-        MenuLangEn.Header = Loc.T("Menu.LangEn");
-        MenuLangZh.IsChecked = Loc.CurrentLanguage == Loc.ZhCn;
-        MenuLangEn.IsChecked = Loc.CurrentLanguage == Loc.EnUs;
-        MenuHelp.Header = Loc.T("Menu.Help");
-        MenuAbout.Header = Loc.T("Menu.About");
+        NavText1.Text = Loc.T("Nav.Step1");
+        NavText2.Text = Loc.T("Nav.Step2");
+        NavText3.Text = Loc.T("Nav.Step3");
+        NavText4.Text = Loc.T("Nav.Step4");
+        SidebarReadonly.Text = Loc.T("Sidebar.Readonly");
+        AboutBtnText.Text = Loc.T("Menu.About");
 
-        GroupRegistry.Header = Loc.T("Group.Registry");
+        // 语言下拉框（语言名用各自语言的“本名”，选择时同步当前语言）
+        _langSyncing = true;
+        LangZhItem.Content = Loc.T("Menu.LangZh");
+        LangEnItem.Content = Loc.T("Menu.LangEn");
+        LangBox.SelectedIndex = Loc.CurrentLanguage == Loc.EnUs ? 1 : 0;
+        _langSyncing = false;
+
+        GroupRegistry.Text = Loc.T("Group.Registry");
         HkcuCheck.Content = Loc.T("Check.Hkcu");
         HklmCheck.Content = Loc.T("Check.Hklm");
         AdminHint.Text = Loc.T("Label.AdminHint");
@@ -70,12 +90,12 @@ public partial class MainWindow : Window
         BtnResetExclusions.Content = Loc.T("Btn.ResetExclusions");
         ExclusionHint.Text = Loc.T("Label.ExclusionHint");
 
-        GroupFolders.Header = Loc.T("Group.Folders");
+        GroupFolders.Text = Loc.T("Group.Folders");
         BtnAddFolder.Content = Loc.T("Btn.AddFolder");
         BtnRemoveFolder.Content = Loc.T("Btn.RemoveFolder");
         BtnResetFolders.Content = Loc.T("Btn.ResetFolders");
 
-        GroupAdvanced.Header = Loc.T("Group.Advanced");
+        GroupAdvanced.Text = Loc.T("Group.Advanced");
         HashCheck.Content = Loc.T("Check.Hash");
 
         BtnStartA.Content = Loc.T("Btn.StartA");
@@ -92,20 +112,23 @@ public partial class MainWindow : Window
         BtnStartB.Content = Loc.T("Btn.StartB");
         BtnCancelB.Content = Loc.T("Btn.Cancel");
 
-        Step4Header.Text = Loc.T("Step4.Header");
+        StatAddedLabel.Text = Loc.T("Tree.Added");
+        StatRemovedLabel.Text = Loc.T("Tree.Removed");
+        StatModifiedLabel.Text = Loc.T("Tree.Modified");
+        SearchLabel.Text = Loc.T("Label.Search");
+        BtnClearSearch.Content = Loc.T("Btn.Clear");
         BtnExportMd.Content = Loc.T("Btn.ExportMd");
         BtnExportCsv.Content = Loc.T("Btn.ExportCsv");
         BtnRestart.Content = Loc.T("Btn.Restart");
-        SearchLabel.Text = Loc.T("Label.Search");
-        BtnClearSearch.Content = Loc.T("Btn.Clear");
 
-        UpdateIndicator();
         if (_diff is not null) RefreshSummaryText();
     }
 
-    private void OnLanguageZh(object sender, RoutedEventArgs e) => Loc.SetLanguage(Loc.ZhCn);
-
-    private void OnLanguageEn(object sender, RoutedEventArgs e) => Loc.SetLanguage(Loc.EnUs);
+    private void OnLangSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_langSyncing || LangBox.SelectedIndex < 0) return;
+        Loc.SetLanguage(LangBox.SelectedIndex == 0 ? Loc.ZhCn : Loc.EnUs);
+    }
 
     private void OnAbout(object sender, RoutedEventArgs e)
     {
@@ -113,8 +136,9 @@ public partial class MainWindow : Window
             MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
-    // ====================== 向导步骤切换 ======================
+    // ====================== 步骤导航 ======================
 
+    /// <summary>切换到某一步：更新面板可见性、导航选中态和完成勾选。</summary>
     private void ShowStep(int step)
     {
         _currentStep = step;
@@ -122,21 +146,41 @@ public partial class MainWindow : Window
         Step2Panel.Visibility = step == 2 ? Visibility.Visible : Visibility.Collapsed;
         Step3Panel.Visibility = step == 3 ? Visibility.Visible : Visibility.Collapsed;
         Step4Panel.Visibility = step == 4 ? Visibility.Visible : Visibility.Collapsed;
-        UpdateIndicator();
+
+        _navSyncing = true;
+        Nav.SelectedIndex = step - 1;
+        _navSyncing = false;
+
+        UpdateNavChecks();
     }
 
-    /// <summary>更新顶部步骤指示条：当前步骤用 » 标出。</summary>
-    private void UpdateIndicator()
+    /// <summary>导航点击：只允许跳到已经到达过的步骤，否则弹回当前步骤。</summary>
+    private void OnNavSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        string[] titles =
+        if (_navSyncing) return;
+        int target = Nav.SelectedIndex + 1;
+        if (target == _currentStep) return;
+
+        if (target >= 1 && target <= _maxReachedStep)
         {
-            Loc.T("Indicator.Step1"),
-            Loc.T("Indicator.Step2"),
-            Loc.T("Indicator.Step3"),
-            Loc.T("Indicator.Step4"),
-        };
-        titles[_currentStep - 1] = "» " + titles[_currentStep - 1];
-        StepIndicator.Text = string.Join("   |   ", titles);
+            ShowStep(target);
+        }
+        else
+        {
+            // 还没走到的步骤不能点：把选中态弹回当前步骤
+            _navSyncing = true;
+            Nav.SelectedIndex = _currentStep - 1;
+            _navSyncing = false;
+        }
+    }
+
+    /// <summary>已完成的步骤在导航项右侧打绿色勾。</summary>
+    private void UpdateNavChecks()
+    {
+        StepCheck1.Visibility = _completedSteps.Contains(1) ? Visibility.Visible : Visibility.Collapsed;
+        StepCheck2.Visibility = _completedSteps.Contains(2) ? Visibility.Visible : Visibility.Collapsed;
+        StepCheck3.Visibility = _completedSteps.Contains(3) ? Visibility.Visible : Visibility.Collapsed;
+        StepCheck4.Visibility = _completedSteps.Contains(4) ? Visibility.Visible : Visibility.Collapsed;
     }
 
     // ====================== 第 1 步：拍快照 A ======================
@@ -204,24 +248,25 @@ public partial class MainWindow : Window
         if (path is null) return;
 
         _optionsA = options;
-        var ok = await CaptureSnapshotAsync(path, options, ProgressA, ProgressTextA, ProgressPanelA, BtnStartA, Step1Input);
+        var ok = await CaptureSnapshotAsync(path, options, ProgressTextA, ProgressPanelA, BtnStartA, Step1Input);
         if (!ok) return;
 
         _pathA = path;
         SnapshotAPathText.Text = path;
         ScopeSummaryText.Text = DescribeOptions(options);
+        _completedSteps.Add(1);
+        _maxReachedStep = Math.Max(_maxReachedStep, 2);
         ShowStep(2);
     }
 
     /// <summary>
     /// 通用的“拍快照”流程：扫描 → 边扫边写文件 → 统计落盘。
-    /// 全程在后台线程执行；UIElement 上的控件只通过 Progress&lt;T&gt; 收进度。
+    /// 全程在后台线程执行；界面控件只通过 Progress&lt;T&gt; 收进度。
     /// 返回 true 表示成功，false 表示取消或出错。
     /// </summary>
     private async Task<bool> CaptureSnapshotAsync(
         string path,
         SnapshotOptions options,
-        ProgressBar progressBar,
         TextBlock progressText,
         StackPanel progressPanel,
         Button startButton,
@@ -294,7 +339,6 @@ public partial class MainWindow : Window
             startButton.IsEnabled = true;
             if (inputPanel is not null) inputPanel.IsEnabled = true;
             progressPanel.Visibility = Visibility.Collapsed;
-            progressBar.IsIndeterminate = false;
         }
     }
 
@@ -304,7 +348,12 @@ public partial class MainWindow : Window
 
     // ====================== 第 2 / 3 步 ======================
 
-    private void OnGoToStep3(object sender, RoutedEventArgs e) => ShowStep(3);
+    private void OnGoToStep3(object sender, RoutedEventArgs e)
+    {
+        _completedSteps.Add(2);
+        _maxReachedStep = Math.Max(_maxReachedStep, 3);
+        ShowStep(3);
+    }
 
     private void OnRestartFromStep2(object sender, RoutedEventArgs e) => ResetAll();
 
@@ -319,7 +368,7 @@ public partial class MainWindow : Window
         if (path is null) return;
 
         // 关键：快照 B 必须使用与快照 A 完全相同的范围（_optionsA）
-        var ok = await CaptureSnapshotAsync(path, _optionsA, ProgressB, ProgressTextB, ProgressPanelB, BtnStartB, null);
+        var ok = await CaptureSnapshotAsync(path, _optionsA, ProgressTextB, ProgressPanelB, BtnStartB, null);
         if (!ok) return;
 
         _pathB = path;
@@ -333,7 +382,6 @@ public partial class MainWindow : Window
 
         BtnStartB.IsEnabled = false;
         ProgressPanelB.Visibility = Visibility.Visible;
-        ProgressB.IsIndeterminate = true;
 
         IProgress<ScanProgress> progress = new Progress<ScanProgress>(p =>
             ProgressTextB.Text = string.Format(CultureInfo.CurrentCulture, Loc.T("Progress.DiffFormat"),
@@ -342,6 +390,8 @@ public partial class MainWindow : Window
         try
         {
             _diff = await Task.Run(() => SnapshotComparer.DiffFiles(_pathA, _pathB, progress, CancellationToken.None));
+            _completedSteps.Add(3);
+            _maxReachedStep = Math.Max(_maxReachedStep, 4);
             RefreshSummaryText();
             BuildResultTree(SearchBox.Text);
             ShowStep(4);
@@ -351,25 +401,24 @@ public partial class MainWindow : Window
             MessageBox.Show(this,
                 string.Format(CultureInfo.CurrentCulture, Loc.T("Msg.DiffError"), ex.Message),
                 "SnapDiff", MessageBoxButton.OK, MessageBoxImage.Warning);
-            ShowStep(3);
         }
         finally
         {
             ProgressPanelB.Visibility = Visibility.Collapsed;
-            ProgressB.IsIndeterminate = false;
             BtnStartB.IsEnabled = true;
         }
     }
 
     // ====================== 第 4 步：结果展示 ======================
 
+    /// <summary>刷新顶部三张统计卡（新增/删除/修改）和“注册表 X · 文件 Y”明细。</summary>
     private void RefreshSummaryText()
     {
         var s = _diff!.Summary;
-        SummaryText.Text = string.Format(CultureInfo.CurrentCulture, Loc.T("Summary.Format"),
-            s.AddedRegistry + s.AddedFiles,
-            s.RemovedRegistry + s.RemovedFiles,
-            s.ModifiedRegistry + s.ModifiedFiles,
+        StatAddedValue.Text = (s.AddedRegistry + s.AddedFiles).ToString("N0", CultureInfo.CurrentCulture);
+        StatRemovedValue.Text = (s.RemovedRegistry + s.RemovedFiles).ToString("N0", CultureInfo.CurrentCulture);
+        StatModifiedValue.Text = (s.ModifiedRegistry + s.ModifiedFiles).ToString("N0", CultureInfo.CurrentCulture);
+        SummaryDetail.Text = string.Format(CultureInfo.CurrentCulture, Loc.T("Summary.Detail"),
             s.AddedRegistry + s.RemovedRegistry + s.ModifiedRegistry,
             s.AddedFiles + s.RemovedFiles + s.ModifiedFiles);
     }
@@ -385,6 +434,7 @@ public partial class MainWindow : Window
     private void BuildResultTree(string filter)
     {
         ResultTree.Items.Clear();
+        ResultEmpty.Visibility = Visibility.Collapsed;
         if (_diff is null) return;
 
         filter = filter.Trim();
@@ -394,8 +444,12 @@ public partial class MainWindow : Window
         AddKindNodes(ChangeKind.Removed, Loc.T("Tree.Removed"), Matches);
         AddKindNodes(ChangeKind.Modified, Loc.T("Tree.Modified"), Matches);
 
-        if (ResultTree.Items.Count == 0 && filter.Length > 0)
-            ResultTree.Items.Add(NewNode(Loc.T("Tree.NoMatch")));
+        if (ResultTree.Items.Count == 0)
+        {
+            // 空状态提示：完全没变化 / 或搜索无结果
+            ResultEmpty.Text = filter.Length > 0 ? Loc.T("Tree.NoMatch") : Loc.T("Tree.NoChanges");
+            ResultEmpty.Visibility = Visibility.Visible;
+        }
     }
 
     /// <summary>一个变化类型（新增/删除/修改）下面挂“文件”和“注册表”两个分类节点。</summary>
@@ -407,7 +461,7 @@ public partial class MainWindow : Window
             .Where(c => c.Kind == kind && matches(FileSearchText(c))).ToList();
         if (regChanges.Count == 0 && fileChanges.Count == 0) return;
 
-        var kindNode = NewNode(string.Format(CultureInfo.CurrentCulture,
+        var kindNode = NewHeaderNode(string.Format(CultureInfo.CurrentCulture,
             Loc.T("Tree.KindNode"), kindName, regChanges.Count, fileChanges.Count), expanded: true);
         if (fileChanges.Count > 0) AddFileCategory(kindNode, fileChanges);
         if (regChanges.Count > 0) AddRegistryCategory(kindNode, regChanges);
@@ -417,13 +471,13 @@ public partial class MainWindow : Window
     /// <summary>文件分类：按根目录 → 父目录分组，条目挂在最内层。</summary>
     private void AddFileCategory(TreeViewItem kindNode, List<FileChange> changes)
     {
-        var categoryNode = NewNode(string.Format(CultureInfo.CurrentCulture, Loc.T("Tree.FilesNode"), changes.Count));
+        var categoryNode = NewHeaderNode(string.Format(CultureInfo.CurrentCulture, Loc.T("Tree.FilesNode"), changes.Count));
 
         foreach (var rootGroup in changes
                      .GroupBy(c => c.Main.RootPath, StringComparer.OrdinalIgnoreCase)
                      .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase))
         {
-            var rootNode = NewNode(rootGroup.Key);
+            var rootNode = NewHeaderNode(rootGroup.Key);
             foreach (var dirGroup in rootGroup
                          .GroupBy(c => ParentDirectory(c.Main.RelativePath), StringComparer.OrdinalIgnoreCase)
                          .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase))
@@ -432,7 +486,7 @@ public partial class MainWindow : Window
                 var items = dirGroup
                     .OrderBy(c => c.Main.RelativePath, StringComparer.OrdinalIgnoreCase)
                     .ToList();
-                var dirNode = NewNode(string.Format(CultureInfo.CurrentCulture, Loc.T("Tree.GroupNode"), label, items.Count));
+                var dirNode = NewHeaderNode(string.Format(CultureInfo.CurrentCulture, Loc.T("Tree.GroupNode"), label, items.Count));
                 AddLeavesWithCap(dirNode, items.Count, i => RenderFileChange(items[i]));
                 if (dirNode.Items.Count > 0) rootNode.Items.Add(dirNode);
             }
@@ -444,13 +498,13 @@ public partial class MainWindow : Window
     /// <summary>注册表分类：按根键（hive）→ 父键路径分组。</summary>
     private void AddRegistryCategory(TreeViewItem kindNode, List<RegistryChange> changes)
     {
-        var categoryNode = NewNode(string.Format(CultureInfo.CurrentCulture, Loc.T("Tree.RegistryNode"), changes.Count));
+        var categoryNode = NewHeaderNode(string.Format(CultureInfo.CurrentCulture, Loc.T("Tree.RegistryNode"), changes.Count));
 
         foreach (var hiveGroup in changes
                      .GroupBy(c => HiveOf(c.Main.KeyPath), StringComparer.OrdinalIgnoreCase)
                      .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase))
         {
-            var hiveNode = NewNode(hiveGroup.Key);
+            var hiveNode = NewHeaderNode(hiveGroup.Key);
             foreach (var keyGroup in hiveGroup
                          .GroupBy(ParentKeyLabel, StringComparer.OrdinalIgnoreCase)
                          .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase))
@@ -458,7 +512,7 @@ public partial class MainWindow : Window
                 var items = keyGroup
                     .OrderBy(c => c.Main.ValueName ?? "", StringComparer.OrdinalIgnoreCase)
                     .ToList();
-                var keyNode = NewNode(string.Format(CultureInfo.CurrentCulture, Loc.T("Tree.GroupNode"), keyGroup.Key, items.Count));
+                var keyNode = NewHeaderNode(string.Format(CultureInfo.CurrentCulture, Loc.T("Tree.GroupNode"), keyGroup.Key, items.Count));
                 AddLeavesWithCap(keyNode, items.Count, i => RenderRegistryChange(items[i]));
                 if (keyNode.Items.Count > 0) hiveNode.Items.Add(keyNode);
             }
@@ -467,19 +521,65 @@ public partial class MainWindow : Window
         if (categoryNode.Items.Count > 0) kindNode.Items.Add(categoryNode);
     }
 
-    /// <summary>把一个组的条目挂到节点下；超过上限时追加一条“已省略”提示。</summary>
+    /// <summary>把一个组的条目挂到节点下；超过上限时追加一条“已省略”提示行。</summary>
     private void AddLeavesWithCap(TreeViewItem parent, int total, Func<int, string> render)
     {
         int shown = Math.Min(total, MaxItemsPerGroup);
-        for (int i = 0; i < shown; i++)
-        {
-            parent.Items.Add(new TreeViewItem { Header = render(i), FontFamily = MonoFont, FontSize = 11.5 });
-        }
+        for (int i = 0; i < shown; i++) parent.Items.Add(NewRowNode(render(i)));
         if (total > shown)
         {
-            parent.Items.Add(NewNode(string.Format(CultureInfo.CurrentCulture,
+            parent.Items.Add(NewNoteNode(string.Format(CultureInfo.CurrentCulture,
                 Loc.T("Tree.Truncated"), total, shown)));
         }
+    }
+
+    // ---------- 结果树的节点工厂（表头行 / 数据行 / 提示行） ----------
+
+    /// <summary>分组表头节点：浅灰底、灰字 11.5 SemiBold（相当于表格的表头行）。</summary>
+    private static TreeViewItem NewHeaderNode(string text, bool expanded = false)
+    {
+        return new TreeViewItem
+        {
+            Header = new TextBlock
+            {
+                Text = text,
+                FontSize = 11.5,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = HeaderTextBrush,
+            },
+            Background = HeaderBgBrush,
+            IsExpanded = expanded,
+        };
+    }
+
+    /// <summary>数据行节点：等宽字体（路径/数字），行高与悬停由 TreeViewItem 隐式模板负责。</summary>
+    private static TreeViewItem NewRowNode(string text)
+    {
+        return new TreeViewItem
+        {
+            Header = new TextBlock
+            {
+                Text = text,
+                FontFamily = new FontFamily("Consolas"),
+                FontSize = 11.5,
+                Foreground = MonoRowBrush,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+            },
+        };
+    }
+
+    /// <summary>提示行节点（如“已省略 N 项”）：灰色小字。</summary>
+    private static TreeViewItem NewNoteNode(string text)
+    {
+        return new TreeViewItem
+        {
+            Header = new TextBlock
+            {
+                Text = text,
+                FontSize = 11.5,
+                Foreground = NoteTextBrush,
+            },
+        };
     }
 
     // ---------- 结果树的显示文案 ----------
@@ -573,9 +673,6 @@ public partial class MainWindow : Window
         return oneLine.Length <= 160 ? oneLine : oneLine[..160] + "…";
     }
 
-    private static TreeViewItem NewNode(string header, bool expanded = false)
-        => new() { Header = header, IsExpanded = expanded };
-
     // ====================== 导出 / 重新开始 ======================
 
     private void OnExportMarkdown(object sender, RoutedEventArgs e) =>
@@ -618,9 +715,15 @@ public partial class MainWindow : Window
         _pathA = null;
         _pathB = null;
         _optionsA = null;
+        _completedSteps.Clear();
+        _maxReachedStep = 1;
         ResultTree.Items.Clear();
+        ResultEmpty.Visibility = Visibility.Collapsed;
         SearchBox.Text = "";
-        SummaryText.Text = "";
+        StatAddedValue.Text = "0";
+        StatRemovedValue.Text = "0";
+        StatModifiedValue.Text = "0";
+        SummaryDetail.Text = "";
         ShowStep(1);
     }
 
