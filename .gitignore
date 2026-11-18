@@ -1,0 +1,28 @@
+# ===== SnapDiff 的 .gitignore（标准 dotnet / Visual Studio 模板精简版）=====
+
+# 构建与发布产物
+[Bb]in/
+[Oo]bj/
+out/
+dist/
+publish/
+
+# IDE 生成的文件
+.vs/
+.idea/
+*.user
+*.suo
+*.userprefs
+*.DotSettings.user
+
+# 测试结果
+TestResults/
+[Tt]est[Rr]esults/
+
+# 快照侦探自己生成的快照文件（不该进仓库）
+*.snapdiff
+
+# 日志与临时文件
+*.log
+*.binlog
+*.tmp
