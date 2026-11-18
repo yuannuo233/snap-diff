@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>SnapDiff.Core</RootNamespace>
+    <Description>SnapDiff 快照侦探的核心逻辑库：只读快照采集（注册表+文件）、JSONL+GZip 存储、对比引擎与报告导出。零第三方依赖。</Description>
+  </PropertyGroup>
+
+  <!-- 说明：本库不引用任何 NuGet 包。注册表 API（Microsoft.Win32.Registry）由 .NET 在 Windows 上内置提供。 -->
+
+</Project>
