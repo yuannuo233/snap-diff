@@ -26,10 +26,20 @@ public static class CsvExporter
     /// <summary>
     /// CSV 字段转义（RFC 4180）：包含逗号、双引号或换行的字段用双引号包起来，
     /// 字段内部的双引号写成两个双引号。
+    /// 审查修复（F-15，CSV 公式注入防御）：以 =、+、-、@ 或制表符开头的字段，
+    /// 在 Excel/WPS 里打开时会被当作公式执行（攻击面：恶意构造的文件名或注册表数据）。
+    /// 对这类字段加一个前导单引号——Excel 会把它当纯文本显示，单引号本身不显示。
     /// </summary>
     public static string EscapeField(string? field)
     {
         if (string.IsNullOrEmpty(field)) return "";
+
+        // 公式注入防御：危险前缀先补单引号
+        if (field[0] is '=' or '+' or '-' or '@' or '\t' or '\r')
+        {
+            field = "'" + field;
+        }
+
         bool needQuote = field.Contains(',')
                          || field.Contains('"')
                          || field.Contains('\r')

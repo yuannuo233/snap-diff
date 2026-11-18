@@ -15,6 +15,10 @@ public class CsvExporterTests
     [InlineData("he said \"hi\"", "\"he said \"\"hi\"\"\"")] // 引号翻倍再加引号
     [InlineData("line1\nline2", "\"line1\nline2\"")]     // 含换行 → 加引号
     [InlineData("a\r\nb", "\"a\r\nb\"")]                 // CRLF 同样加引号
+    [InlineData("=1+1", "'=1+1")]                        // 审查修复：公式注入防御（等号开头补单引号）
+    [InlineData("-2+3", "'-2+3")]                        // 减号开头同样防御
+    [InlineData("+y", "'+y")]                            // 加号开头同样防御
+    [InlineData("@x", "'@x")]                            // @ 开头同样防御
     public void 字段转义符合RFC4180(string input, string expected)
         => Assert.Equal(expected, CsvExporter.EscapeField(input));
 
