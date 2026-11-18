@@ -1,0 +1,156 @@
+<Window x:Class="SnapDiff.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="SnapDiff"
+        Width="960" Height="640" MinWidth="820" MinHeight="540"
+        WindowStartupLocation="CenterScreen"
+        FontSize="12">
+    <!-- 说明：界面上所有文案都在 Loc.cs 双语字典里，由后台代码设置（本文件只负责布局）。 -->
+    <DockPanel>
+
+        <!-- 菜单栏：语言切换、关于 -->
+        <Menu DockPanel.Dock="Top" Padding="2">
+            <MenuItem x:Name="MenuLanguage">
+                <MenuItem x:Name="MenuLangZh" IsCheckable="True" Click="OnLanguageZh" />
+                <MenuItem x:Name="MenuLangEn" IsCheckable="True" Click="OnLanguageEn" />
+            </MenuItem>
+            <MenuItem x:Name="MenuHelp">
+                <MenuItem x:Name="MenuAbout" Click="OnAbout" />
+            </MenuItem>
+        </Menu>
+
+        <!-- 标题 + 步骤指示（紧凑、原生风格） -->
+        <Border DockPanel.Dock="Top" BorderBrush="#D9D9D9" BorderThickness="0,0,0,1"
+                Background="#F5F5F5" Padding="10,6">
+            <DockPanel>
+                <TextBlock x:Name="TitleText" FontSize="14" FontWeight="Bold" VerticalAlignment="Center" />
+                <TextBlock x:Name="StepIndicator" VerticalAlignment="Center" HorizontalAlignment="Right"
+                           Foreground="#555" TextTrimming="CharacterEllipsis" />
+            </DockPanel>
+        </Border>
+
+        <Grid Margin="10">
+
+            <!-- ================= 第 1 步：选范围拍快照 A ================= -->
+            <Grid x:Name="Step1Panel">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto">
+                    <StackPanel x:Name="Step1Input">
+                        <GroupBox x:Name="GroupRegistry">
+                            <StackPanel>
+                                <WrapPanel>
+                                    <CheckBox x:Name="HkcuCheck" IsChecked="True" VerticalAlignment="Center" Margin="0,0,20,0" />
+                                    <CheckBox x:Name="HklmCheck" VerticalAlignment="Center" />
+                                </WrapPanel>
+                                <TextBlock x:Name="AdminHint" Foreground="#B26B00" TextWrapping="Wrap"
+                                           Margin="0,4,0,0" Visibility="Collapsed" />
+                                <TextBlock x:Name="ExclusionLabel" TextWrapping="Wrap" Margin="0,8,0,3" />
+                                <TextBox x:Name="ExclusionBox" Height="92" AcceptsReturn="True" TextWrapping="NoWrap"
+                                         VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                         FontFamily="Consolas" FontSize="11.5" />
+                                <WrapPanel Margin="0,6,0,0">
+                                    <Button x:Name="BtnResetExclusions" Click="OnResetExclusions" Padding="8,2" />
+                                    <TextBlock x:Name="ExclusionHint" Foreground="#777" TextWrapping="Wrap"
+                                               MaxWidth="560" Margin="10,2,0,0" VerticalAlignment="Center" />
+                                </WrapPanel>
+                            </StackPanel>
+                        </GroupBox>
+                        <GroupBox x:Name="GroupFolders" Margin="0,8,0,0">
+                            <StackPanel>
+                                <ListBox x:Name="DirList" Height="92" />
+                                <WrapPanel Margin="0,6,0,0">
+                                    <Button x:Name="BtnAddFolder" Click="OnAddDir" Padding="8,2" />
+                                    <Button x:Name="BtnRemoveFolder" Click="OnRemoveDir" Padding="8,2" Margin="6,0,0,0" />
+                                    <Button x:Name="BtnResetFolders" Click="OnResetDirs" Padding="8,2" Margin="6,0,0,0" />
+                                </WrapPanel>
+                            </StackPanel>
+                        </GroupBox>
+                        <GroupBox x:Name="GroupAdvanced" Margin="0,8,0,0">
+                            <CheckBox x:Name="HashCheck" />
+                        </GroupBox>
+                    </StackPanel>
+                </ScrollViewer>
+                <StackPanel Grid.Row="1" Margin="0,10,0,0">
+                    <Button x:Name="BtnStartA" Click="OnStartSnapshotA" Padding="12,5" FontWeight="Bold"
+                            HorizontalAlignment="Left" Background="#0078D7" Foreground="White" />
+                    <StackPanel x:Name="ProgressPanelA" Visibility="Collapsed" Margin="0,8,0,0">
+                        <ProgressBar x:Name="ProgressA" IsIndeterminate="True" Height="4" />
+                        <TextBlock x:Name="ProgressTextA" TextTrimming="CharacterEllipsis" Margin="0,5,0,0" Foreground="#444" />
+                        <Button x:Name="BtnCancelA" Click="OnCancelScanA" Padding="8,2" Margin="0,6,0,0" HorizontalAlignment="Left" />
+                    </StackPanel>
+                </StackPanel>
+            </Grid>
+
+            <!-- ================= 第 2 步：去安装/运行软件 ================= -->
+            <Grid x:Name="Step2Panel" Visibility="Collapsed">
+                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="620">
+                    <TextBlock x:Name="Step2Header" FontSize="20" FontWeight="Bold"
+                               TextAlignment="Center" TextWrapping="Wrap" />
+                    <TextBlock x:Name="Step2Body" TextAlignment="Center" TextWrapping="Wrap"
+                               Foreground="#444" Margin="0,10,0,0" />
+                    <TextBlock x:Name="Step2SavedTo" TextAlignment="Center" TextWrapping="Wrap"
+                               Foreground="#777" Margin="0,14,0,0" />
+                    <TextBlock x:Name="SnapshotAPathText" TextAlignment="Center" TextWrapping="Wrap"
+                               FontFamily="Consolas" FontSize="11.5" Foreground="#333" Margin="0,2,0,0" />
+                    <Button x:Name="BtnGoStep3" Click="OnGoToStep3" Padding="12,5" FontWeight="Bold"
+                            HorizontalAlignment="Center" Margin="0,18,0,0"
+                            Background="#0078D7" Foreground="White" />
+                    <Button x:Name="BtnBackStep1" Click="OnRestartFromStep2" Padding="8,2"
+                            HorizontalAlignment="Center" Margin="0,10,0,0" />
+                </StackPanel>
+            </Grid>
+
+            <!-- ================= 第 3 步：拍快照 B ================= -->
+            <Grid x:Name="Step3Panel" Visibility="Collapsed">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <TextBlock x:Name="Step3Header" FontSize="16" FontWeight="Bold" TextWrapping="Wrap" />
+                        <TextBlock x:Name="ScopeLabel" Foreground="#777" Margin="0,10,0,3" />
+                        <Border Background="#F5F5F5" BorderBrush="#D9D9D9" BorderThickness="1" Padding="8">
+                            <TextBlock x:Name="ScopeSummaryText" TextWrapping="Wrap" />
+                        </Border>
+                        <Button x:Name="BtnStartB" Click="OnStartSnapshotB" Padding="12,5" FontWeight="Bold"
+                                HorizontalAlignment="Left" Margin="0,12,0,0"
+                                Background="#0078D7" Foreground="White" />
+                        <StackPanel x:Name="ProgressPanelB" Visibility="Collapsed" Margin="0,8,0,0">
+                            <ProgressBar x:Name="ProgressB" IsIndeterminate="True" Height="4" />
+                            <TextBlock x:Name="ProgressTextB" TextTrimming="CharacterEllipsis" Margin="0,5,0,0" Foreground="#444" />
+                            <Button x:Name="BtnCancelB" Click="OnCancelScanB" Padding="8,2" Margin="0,6,0,0" HorizontalAlignment="Left" />
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+            </Grid>
+
+            <!-- ================= 第 4 步：对比结果 ================= -->
+            <Grid x:Name="Step4Panel" Visibility="Collapsed">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <StackPanel Grid.Row="0">
+                    <TextBlock x:Name="Step4Header" FontSize="16" FontWeight="Bold" />
+                    <TextBlock x:Name="SummaryText" TextWrapping="Wrap" Margin="0,6,0,0" FontWeight="Bold" />
+                    <WrapPanel Margin="0,8,0,0">
+                        <Button x:Name="BtnExportMd" Click="OnExportMarkdown" Padding="8,2" />
+                        <Button x:Name="BtnExportCsv" Click="OnExportCsv" Padding="8,2" Margin="6,0,0,0" />
+                        <Button x:Name="BtnRestart" Click="OnRestart" Padding="8,2" Margin="6,0,0,0" />
+                    </WrapPanel>
+                </StackPanel>
+                <WrapPanel Grid.Row="1" Margin="0,8,0,0">
+                    <TextBlock x:Name="SearchLabel" VerticalAlignment="Center" />
+                    <TextBox x:Name="SearchBox" Width="380" Padding="3,2" VerticalContentAlignment="Center"
+                             TextChanged="OnSearchChanged" Margin="6,0,0,0" />
+                    <Button x:Name="BtnClearSearch" Click="OnClearSearch" Padding="8,2" Margin="6,0,0,0" />
+                </WrapPanel>
+                <TreeView x:Name="ResultTree" Grid.Row="2" Margin="0,8,0,0"
+                          VirtualizingPanel.IsVirtualizing="True"
+                          VirtualizingPanel.VirtualizationMode="Recycling" />
+            </Grid>
+
+        </Grid>
+    </DockPanel>
+</Window>

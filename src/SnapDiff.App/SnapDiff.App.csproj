@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>SnapDiff.App</RootNamespace>
+    <AssemblyName>SnapDiff</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Version>0.1.0</Version>
+    <Product>快照侦探 SnapDiff</Product>
+    <Description>装软件前后各拍一张“系统快照”，对比出软件到底新增、修改、删除了哪些文件和注册表项。</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SnapDiff.Core\SnapDiff.Core.csproj" />
+  </ItemGroup>
+
+</Project>
