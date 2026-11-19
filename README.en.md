@@ -14,7 +14,9 @@ Take one read-only snapshot before you install something and another one after �
 - Open snapshot format: a single GZip-compressed JSON Lines file (`.snapdiff`), easy to script against
 - English & Chinese UI (switchable at runtime), zero third-party dependencies in the core library
 
-## Usage (three steps)
+## Download & Usage (three steps)
+
+Download the latest `SnapDiff-v0.1.0-win-x64.zip` from [Releases](../../releases) and extract it (single file, no installer), then:
 
 1. Take snapshot A → 2. Install / run the program in question → 3. Take snapshot B, review the diff, export a report.
 
