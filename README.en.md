@@ -31,3 +31,9 @@ Binary: `src\SnapDiff.App\bin\Release\net10.0-windows\SnapDiff.exe` (requires th
 ## Privacy
 
 Read-only and fully offline: never writes the registry, never touches your files, never uploads anything.
+
+## Feedback / Get help
+
+Found a bug or have a suggestion? Please open an **[Issue](../../issues)** on this repository — I'll reply there. Including your Windows version, reproduction steps, and a screenshot helps me pinpoint it faster.
+
+> 💡 Why Issues? Questions and answers stay public — the next person with the same problem can find the answer by searching, so we build a shared manual together.
