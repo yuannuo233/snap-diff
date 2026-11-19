@@ -26,3 +26,6 @@ TestResults/
 *.log
 *.binlog
 *.tmp
+
+# Release 安装包不进源码仓库（走 GitHub Releases 分发）
+*.zip
